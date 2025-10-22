@@ -37,7 +37,7 @@ public class DLBHotspotDetector implements HotspotDetector {
                     node.beginCount += 1;
                     //increment begin count
                 }
-                else if(0 < i && i+n < leakedPassword.length()-1){
+                else if(0 < i && i+n < leakedPassword.length()){
                     //increment mid count
                     node.midCount += 1;
                 }
@@ -98,7 +98,7 @@ public class DLBHotspotDetector implements HotspotDetector {
                         break;
                     }
                     subStr.append(c);
-                    
+
                     //add or replace hotspot if at end of hotspot
                     if(node.isTerminal){
                         //check position

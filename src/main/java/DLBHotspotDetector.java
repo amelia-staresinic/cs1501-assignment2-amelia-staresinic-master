@@ -2,9 +2,7 @@ import java.util.*;
 
 public class DLBHotspotDetector implements HotspotDetector {
 
-    // ----------------------------
-    // Interface methods (TODO)
-    // ----------------------------
+    //empty root node to start
     Node root = new Node();
 
     @Override
@@ -18,97 +16,167 @@ public class DLBHotspotDetector implements HotspotDetector {
         Set<String> seen = new HashSet<>();
 
         for (int n = minN; n <= maxN; n++){
-            for (int i = 0; i < leakedPassword.length(); i++){
+            for (int i = 0; i+n <= leakedPassword.length(); i++){
                 String s = leakedPassword.substring(i,i+n);
                 Node node = this.root;
                 for (char c : s.toCharArray()){
                     //insert chars as siblings or new child
-                    Node subChar = new Node(c);
-                    if(node.isTerminal){
-                        node.child = subChar;
+                    if(node.child == null){
+                        node.child = new Node(c);
+                        node = node.child;
                     }
-                    else if(node.child.ch != c){
-                        //another for loop to check all siblings of child/check for repeated letter?
-                        //or recursive helper method
-                        if(node.child.sibling == null){
-                            node.child.sibling = subChar;
-                        }
+                    else{
+                        //helper method to check siblings or add node as sibling
+                        node = addNode(node.child, c);
                     }
-                    node = subChar;
-                    //mark as a leaf
-                    node.isTerminal = true;  
                 }
-                //set up hotspot stats
-                boolean isStart = false;
-                boolean isEnd = false;
+                //mark as a leaf 
+                node.isTerminal = true;
+            
                 if (i == 0){
-                    isStart = true;
+                    node.beginCount += 1;
                     //increment begin count
                 }
                 else if(0 < i && i+n < leakedPassword.length()-1){
                     //increment mid count
+                    node.midCount += 1;
                 }
                 else{
-                    isEnd = true;
+                    node.endCount += 1;
                     //increment end count
                 }
                 //check if seen
                 if(!seen.contains(s)){
                     seen.add(s);
-                    //increment docFreq -- add as parameter to Node?
-
+                    //increment docFreq only if not in seen
+                    node.docFreq += 1;
                 }
-                //increment freq
-                Hotspot hs = new Hotspot(s, minN, maxN, i, i, n, isStart, i, isEnd);
+                //increment freq always
+                node.freq += 1;
             }
         }
-        // TODO:
-        // 1) Optionally clear a per-password "seen" set to compute docFreq on first
-        // occurrence only.
-        // Set<String> seen = new HashSet<>();
-        //
-        // 2) For each n in [minN..maxN], slide a window over leakedPassword and extract
-        // substrings.
-        // For each substring s = leakedPassword[i..i+n):
-        // - Insert s into the DLB (create nodes as needed).
-        // - Mark terminal node, increment freq.
-        // - If password not in 'seen', increment docFreq and add to 'seen'.
-        // - Update begin/middle/end counts based on position i and (i+n == len).
 
+    }
+
+    private Node addNode(Node n, char c){
+        Node curr = n;
+        while(curr != null){
+            //returns existing node if c already in sibling list
+            if(curr.ch == c){
+                return curr;
+            }
+            if(curr.sibling == null){
+                break;
+            }
+
+            curr = curr.sibling; 
+        }
+        //creates new sibling if new char
+        Node subChar = new Node(c);
+        curr.sibling = subChar;
+        return subChar;
     }
 
     @Override
     public Set<Hotspot> hotspotsIn(String candidatePassword) {
+        Set<Hotspot> hotspotSet = new LinkedHashSet<>();
         if (candidatePassword == null)
             throw new IllegalArgumentException("null candidatePassword");
 
-        // TODO:
-        // - For i = 0..candidate.length()-1:
-        // Start at the root of the DLB.
-        // Walk character by character (candidate.charAt(j)) until no matching child
-        // exists.
-        // Every time you reach a terminal node, that substring is a hotspot → aggregate
-        // it.
-        return new LinkedHashSet<>();
+        for(int i = 0; i < candidatePassword.length(); i++){
+            Node node = root.child;
+            StringBuilder subStr = new StringBuilder();
+            if(node != null){
+                for(int j = i; j < candidatePassword.length(); j++){
+                    char c = candidatePassword.charAt(j);
+
+                    //helper method returns existing node or null
+                    node = checkSiblings(node, c);
+                    
+                    //substring not a hotspot
+                    if(node == null){
+                        break;
+                    }
+                    subStr.append(c);
+                    
+                    //add or replace hotspot if at end of hotspot
+                    if(node.isTerminal){
+                        //check position
+                        boolean atBegin = false;
+                        boolean atEnd = false;
+                        int midCount = 0;
+                        if(i==0){
+                            atBegin = true;
+                        }
+                        if(i+subStr.length() == candidatePassword.length()){
+                            atEnd = true;
+                        }
+                        else{
+                            midCount++;
+                        }
+                        Hotspot hs = null;
+                        //check for existing hotspot
+                        for(Hotspot h : hotspotSet){
+                            if(h.ngram.equals(subStr.toString())){
+                                //set new hotspot to equal existing
+                                hs = h;
+                                break;
+                            }
+                        }
+                        if(hs == null){//if new hotspot in password
+                            hs = new Hotspot(subStr.toString(), node.freq, node.docFreq, node.beginCount, node.midCount, node.endCount, atBegin, midCount, atEnd);
+                            hotspotSet.add(hs);
+                        }
+                        else{ //if already recorded update stats and replace the hotspot
+                            atBegin = atBegin || hs.candidateAtBegin;
+                            atEnd = atEnd || hs.candidateAtEnd;
+                            midCount += hs.candidateMiddleCount;
+                            hotspotSet.remove(hs);
+                            hotspotSet.add(new Hotspot(subStr.toString(), node.freq, node.docFreq, node.beginCount, node.midCount, node.endCount, atBegin, midCount, atEnd));
+                        }
+                    }
+                    node = node.child;
+                }
+            }
+        }
+
+        return hotspotSet;
+    }
+
+    private Node checkSiblings(Node node, char c){
+        Node curr = node;
+        while(curr != null){
+            if(curr.ch == c){
+                return curr;
+            }
+            else{
+                curr = curr.sibling;
+            }
+        }
+        //return null if c not found
+        return null;
     }
 
     private class Node{
         char ch;
         Node child, sibling;
         boolean isTerminal;
-        Hotspot hotspot;
+        int beginCount;
+        int midCount;
+        int endCount;
+        int docFreq;
+        int freq;
 
         public Node(){
             this.child = null;
             this.sibling = null;
-            this.isTerminal = true;
+            this.isTerminal = false;
         }
         public Node(char ch){
             this.ch = ch;
             this.child = null;
             this.sibling = null;
             this.isTerminal = false;
-            this.hotspot = null;
         }
 
 
